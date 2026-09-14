@@ -13,6 +13,35 @@ static struct strm_queue* prod_queue;
 static int worker_max;
 static int stream_count = 0;
 
+static pthread_mutex_t task_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t task_cond = PTHREAD_COND_INITIALIZER;
+static unsigned long work_gen;
+
+static pthread_mutex_t done_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t done_cond = PTHREAD_COND_INITIALIZER;
+
+static void
+task_wakeup()
+{
+  pthread_mutex_lock(&task_mtx);
+  work_gen++;
+  pthread_cond_signal(&task_cond);
+  pthread_mutex_unlock(&task_mtx);
+}
+
+static void
+task_finished()
+{
+  pthread_mutex_lock(&task_mtx);
+  work_gen++;
+  pthread_cond_broadcast(&task_cond);
+  pthread_mutex_unlock(&task_mtx);
+
+  pthread_mutex_lock(&done_mtx);
+  pthread_cond_broadcast(&done_cond);
+  pthread_mutex_unlock(&done_mtx);
+}
+
 /* internal variable to tell multi-threaded mode */
 int strm_event_loop_started = FALSE;
 
@@ -32,16 +61,23 @@ strm_task_new(strm_callback func, strm_value data)
   return t;
 }
 
-void
-strm_task_add(strm_stream* strm, struct strm_task* task)
+static void
+task_reschedule(strm_stream* strm)
 {
-  strm_queue_add(strm->queue, task);
   if (strm->mode == strm_producer) {
     strm_queue_add(prod_queue, strm);
   }
   else {
     strm_queue_add(queue, strm);
   }
+  task_wakeup();
+}
+
+void
+strm_task_add(strm_stream* strm, struct strm_task* task)
+{
+  strm_queue_add(strm->queue, task);
+  task_reschedule(strm);
 }
 
 void
@@ -161,6 +197,12 @@ task_loop(void *data)
   strm_stream* strm;
 
   for (;;) {
+    unsigned long gen;
+
+    pthread_mutex_lock(&task_mtx);
+    gen = work_gen;
+    pthread_mutex_unlock(&task_mtx);
+
     strm = strm_queue_get(queue);
     if (!strm) {
       strm = strm_queue_get(prod_queue);
@@ -173,10 +215,20 @@ task_loop(void *data)
           task_exec(strm, t);
         }
         strm_atomic_cas(strm->excl, 1, 0);
+        if (!strm_queue_empty_p(strm->queue)) {
+          task_reschedule(strm);
+        }
       }
     }
     if (stream_count == 0) {
       break;
+    }
+    if (!strm) {
+      pthread_mutex_lock(&task_mtx);
+      while (work_gen == gen && stream_count != 0) {
+        pthread_cond_wait(&task_cond, &task_mtx);
+      }
+      pthread_mutex_unlock(&task_mtx);
     }
   }
   return NULL;
@@ -206,12 +258,11 @@ strm_loop()
 {
   if (stream_count == 0) return STRM_OK;
   task_init();
-  for (;;) {
-    sched_yield();
-    if (stream_count == 0) {
-      break;
-    }
+  pthread_mutex_lock(&done_mtx);
+  while (stream_count != 0) {
+    pthread_cond_wait(&done_cond, &done_mtx);
   }
+  pthread_mutex_unlock(&done_mtx);
   return STRM_OK;
 }
 
@@ -269,5 +320,7 @@ strm_stream_close(strm_stream* strm)
     }
     free(strm->rest);
   }
-  strm_atomic_dec(stream_count);
+  if (strm_atomic_dec(stream_count) == 1) {
+    task_finished();
+  }
 }
