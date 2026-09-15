@@ -605,7 +605,7 @@ exec_expr(strm_stream* strm, strm_state* state, node* np, strm_value* val)
       node_let *nlet = (node_let*)np;
       n = exec_expr(strm, state, nlet->rhs, val);
       if (n) {
-        strm_raise(strm, "failed to assign");
+        if (!strm->exc) strm_raise(strm, "failed to assign");
         return n;
       }
       return strm_var_set(state, node_to_sym(nlet->lhs), *val);
