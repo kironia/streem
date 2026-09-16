@@ -59,20 +59,34 @@ static int
 io_push(int fd, strm_stream* strm, strm_callback cb)
 {
   struct epoll_event ev = { 0 };
+  int r;
 
   ev.events = EPOLLIN | EPOLLONESHOT;
   ev.data.ptr = io_task(strm, cb);
-  return epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev);
+  r = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev);
+  if (r != 0) free(ev.data.ptr);
+  return r;
 }
 
 static int
 io_kick(int fd, strm_stream* strm, strm_callback cb)
 {
   struct epoll_event ev;
+  int r;
 
   ev.events = EPOLLIN | EPOLLONESHOT;
   ev.data.ptr = io_task(strm, cb);
-  return epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
+  r = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
+  if (r != 0) free(ev.data.ptr);
+  return r;
+}
+
+static void
+io_rearm(int fd, strm_stream* strm, strm_callback cb)
+{
+  if (io_kick(fd, strm, cb) != 0) {
+    strm_task_push(strm, cb, strm_nil_value());
+  }
 }
 
 static int
@@ -113,6 +127,9 @@ strm_io_start_read(strm_stream* strm, int fd, strm_callback cb)
   if (io_push(fd, strm, cb) == 0) {
     io_wait_num++;
   }
+  else {
+    strm_task_push(strm, cb, strm_nil_value());
+  }
 }
 
 static void
@@ -129,7 +146,7 @@ void
 strm_io_emit(strm_stream* strm, strm_value data, int fd, strm_callback cb)
 {
   strm_emit(strm, data, NULL);
-  io_kick(fd, strm, cb);
+  io_rearm(fd, strm, cb);
 }
 
 struct fd_read_buffer {
@@ -214,7 +231,7 @@ readline_cb(strm_stream* strm, strm_value data)
       strm_task_push(strm, read_cb, strm_nil_value());
     }
     else {
-      io_kick(b->fd, strm, read_cb);
+      io_rearm(b->fd, strm, read_cb);
     }
     return STRM_OK;
   }
