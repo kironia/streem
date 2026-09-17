@@ -22,7 +22,6 @@ int
 epoll_ctl(int epfd, int op, int fd, struct epoll_event* event)
 {
   struct kevent kev = {0};
-  struct timespec tv = {0};
 
   kev.ident = fd;
   kev.filter = EVFILT_READ;
@@ -41,7 +40,7 @@ epoll_ctl(int epfd, int op, int fd, struct epoll_event* event)
     kev.flags |= EV_DELETE;
     break;
   }
-  return kevent(epfd, &kev, 1, &kev, 1, &tv);
+  return kevent(epfd, &kev, 1, NULL, 0, NULL);
 }
 
 #define MAX_KEVENTS 10
