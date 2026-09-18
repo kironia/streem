@@ -284,6 +284,7 @@ strm_readio(strm_io io)
 #ifdef STRM_IO_MMAP
       void* map = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, buf->fd, 0);
       if (map == MAP_FAILED) {
+        cb = read_cb;
         buf->beg = buf->end = buf->buf;
       }
       else {
