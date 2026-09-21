@@ -96,8 +96,12 @@ strm_queue_free(struct strm_queue* q)
 int
 strm_queue_empty_p(struct strm_queue* q)
 {
-  if (q->head == NULL) return 1;
-  return 0;
+  int empty;
+
+  pthread_mutex_lock(&q->mutex);
+  empty = (q->head == NULL);
+  pthread_mutex_unlock(&q->mutex);
+  return empty;
 }
 
 #else  /* NO_LOCKFREE_QUEUE */
