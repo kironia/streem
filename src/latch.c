@@ -1,5 +1,6 @@
 #include "strm.h"
 #include "queue.h"
+#include <pthread.h>
 
 const char* strm_p(strm_value val);
 
@@ -11,6 +12,8 @@ struct recv_data {
 struct latch_data {
   struct strm_queue* dq;        /* data queue */
   struct strm_queue* rq;        /* receiver queue */
+  pthread_mutex_t mtx;
+  int closed;
 };
 
 int
@@ -27,19 +30,22 @@ static int
 latch_push(strm_stream* strm, strm_value data)
 {
   struct latch_data* d = strm->data;
-  struct recv_data* r = strm_queue_get(d->rq);
+  struct recv_data* r;
 
   if (strm->mode != strm_consumer) {
     return STRM_NG;
   }
-  if (r) {
-    (*r->func)(r->strm, data);
-    free(r);
-  }
-  else {
+  pthread_mutex_lock(&d->mtx);
+  r = strm_queue_get(d->rq);
+  if (!r) {
     strm_value* v = malloc(sizeof(strm_value));
     *v = data;
     strm_queue_add(d->dq, v);
+  }
+  pthread_mutex_unlock(&d->mtx);
+  if (r) {
+    (*r->func)(r->strm, data);
+    free(r);
   }
   return STRM_OK;
 }
@@ -49,19 +55,30 @@ strm_latch_receive(strm_stream* latch, strm_stream* strm, strm_callback func)
 {
   struct latch_data* d;
   strm_value* v;
+  int eos = FALSE;
 
   assert(latch->start_func == latch_push);
   d = latch->data;
+  pthread_mutex_lock(&d->mtx);
   v = strm_queue_get(d->dq);
+  if (!v) {
+    if (d->closed) {
+      eos = TRUE;
+    }
+    else {
+      struct recv_data* r = malloc(sizeof(struct recv_data));
+      r->strm = strm;
+      r->func = func;
+      strm_queue_add(d->rq, r);
+    }
+  }
+  pthread_mutex_unlock(&d->mtx);
   if (v) {
     (*func)(strm, *v);
     free(v);
   }
-  else {
-    struct recv_data* r = malloc(sizeof(struct recv_data));
-    r->strm = strm;
-    r->func = func;
-    strm_queue_add(d->rq, r);
+  else if (eos) {
+    (*func)(strm, strm_nil_value());
   }
 }
 
@@ -71,7 +88,12 @@ latch_close(strm_stream* strm, strm_value data)
   struct latch_data* d = strm->data;
 
   for (;;) {
-    struct recv_data* r = strm_queue_get(d->rq);
+    struct recv_data* r;
+
+    pthread_mutex_lock(&d->mtx);
+    d->closed = TRUE;
+    r = strm_queue_get(d->rq);
+    pthread_mutex_unlock(&d->mtx);
     if (!r) break;
     (*r->func)(r->strm, data);
     free(r);
@@ -87,6 +109,8 @@ strm_latch_new()
   assert(d != NULL);
   d->dq = strm_queue_new();
   d->rq = strm_queue_new();
+  d->closed = FALSE;
+  pthread_mutex_init(&d->mtx, NULL);
   return strm_stream_new(strm_consumer, latch_push, latch_close, d);
 }
 
@@ -104,6 +128,16 @@ zip_iter(strm_stream* strm, strm_value data)
 {
   struct zip_data* z = strm->data;
 
+  if (!z) return STRM_OK;
+  if (strm_nil_p(data)) {
+    strm_int i;
+
+    for (i=0; i<z->len; i++) {
+      strm_stream_close(z->latch[i]);
+    }
+    strm_stream_close(strm);
+    return STRM_OK;
+  }
   strm_ary_ptr(z->a)[z->i++] = data;
   if (z->i < z->len) {
     strm_latch_receive(z->latch[z->i], strm, zip_iter);
@@ -182,8 +216,9 @@ concat_iter(strm_stream* strm, strm_value data)
 {
   struct concat_data* d = strm->data;
 
+  if (!d) return STRM_OK;
   strm_emit(strm, data, NULL);
-  if (strm_latch_finish_p(d->latch[d->i])) {
+  if (strm_nil_p(data) || strm_latch_finish_p(d->latch[d->i])) {
     strm_stream_close(d->latch[d->i]);
     d->i++;
   }
