@@ -261,10 +261,25 @@ exec_concat(strm_stream* strm, int argc, strm_value* args, strm_value* ret)
   return STRM_OK;
 }
 
+static int
+chan_func(strm_stream* strm, strm_value data)
+{
+  strm_emit(strm, data, NULL);
+  return STRM_OK;
+}
+
+static int
+exec_chan(strm_stream* strm, int argc, strm_value* args, strm_value* ret)
+{
+  *ret = strm_stream_value(strm_stream_new(strm_filter, chan_func, NULL, NULL));
+  return STRM_OK;
+}
+
 void
 strm_latch_init(strm_state* state)
 {
   strm_var_def(state, "&", strm_cfunc_value(exec_zip));
   strm_var_def(state, "zip", strm_cfunc_value(exec_zip));
   strm_var_def(state, "concat", strm_cfunc_value(exec_concat));
+  strm_var_def(state, "chan", strm_cfunc_value(exec_chan));
 }
