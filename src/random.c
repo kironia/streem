@@ -71,6 +71,29 @@ rand_float(uint32_t seed[4])
   return xorshift128(seed)*(1.0/4294967295.0);
 }
 
+static int
+seed_setup(strm_stream* strm, int argc, strm_value* args, uint32_t seed[4])
+{
+  const char* s;
+  strm_int len;
+
+  strm_get_args(strm, argc, args, "|s", &s, &len);
+  if (argc == 0) {
+    xorshift128init(seed);
+    return STRM_OK;
+  }
+  if ((size_t)len != sizeof(uint32_t)*4) {
+    strm_raise(strm, "seed size differ");
+    return STRM_NG;
+  }
+  memcpy(seed, s, len);
+  if (!(seed[0]|seed[1]|seed[2]|seed[3])) {
+    strm_raise(strm, "invalid seed");
+    return STRM_NG;
+  }
+  return STRM_OK;
+}
+
 struct rand_data {
   uint32_t seed[4];
 };
@@ -89,22 +112,12 @@ static int
 exec_rand(strm_stream* strm, int argc, strm_value* args, strm_value* ret)
 {
   struct rand_data* d;
-  const char* s;
-  strm_int len;
 
-  strm_get_args(strm, argc, args, "|s", &s, &len);
   d = malloc(sizeof(struct rand_data));
   if (!d) return STRM_NG;
-  if (argc == 2) {
-    if (len != sizeof(d->seed)) {
-      strm_raise(strm, "seed size differ");
-      free(d);
-      return STRM_NG;
-    }
-    memcpy(d->seed, s, len);
-  }
-  else {
-    xorshift128init(d->seed);
+  if (seed_setup(strm, argc, args, d->seed) == STRM_NG) {
+    free(d);
+    return STRM_NG;
   }
   *ret = strm_stream_value(strm_stream_new(strm_producer, gen_rand, NULL, (void*)d));
   return STRM_OK;
@@ -164,22 +177,12 @@ static int
 exec_rnorm(strm_stream* strm, int argc, strm_value* args, strm_value* ret)
 {
   struct rnorm_data* d;
-  const char* s;
-  strm_int len;
 
-  strm_get_args(strm, argc, args, "|s", &s, &len);
   d = malloc(sizeof(struct rnorm_data));
   if (!d) return STRM_NG;
-  if (argc == 2) {
-    if (len != sizeof(d->seed)) {
-      strm_raise(strm, "seed size differ");
-      free(d);
-      return STRM_NG;
-    }
-    memcpy(d->seed, s, len);
-  }
-  else {
-    xorshift128init(d->seed);
+  if (seed_setup(strm, argc, args, d->seed) == STRM_NG) {
+    free(d);
+    return STRM_NG;
   }
   d->has_spare = FALSE;
   *ret = strm_stream_value(strm_stream_new(strm_producer, gen_rnorm, NULL, (void*)d));
