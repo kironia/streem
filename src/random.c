@@ -234,6 +234,10 @@ exec_sample(strm_stream* strm, int argc, strm_value* args, strm_value* ret)
   strm_int len;
 
   strm_get_args(strm, argc, args, "i", &len);
+  if (len <= 0) {
+    strm_raise(strm, "sample size must be positive");
+    return STRM_NG;
+  }
   d = malloc(sizeof(struct sample_data)+sizeof(strm_value)*len);
   if (!d) return STRM_NG;
   d->len = len;
