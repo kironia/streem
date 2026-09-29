@@ -206,7 +206,7 @@ iter_sample(strm_stream* strm, strm_value data)
     d->samples[d->i++] = data;
     return STRM_OK;
   }
-  r = xorshift128(d->seed)%(d->i);
+  r = xorshift128(d->seed)%(d->i+1);
   if (r < d->len) {
     d->samples[r] = data;
   }
