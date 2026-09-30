@@ -218,7 +218,7 @@ static int
 finish_sample(strm_stream* strm, strm_value data)
 {
   struct sample_data* d = strm->data;
-  strm_int i, len=d->len;
+  strm_int i, len = (d->i < d->len) ? d->i : d->len;
 
   for (i=0; i<len; i++) {
     strm_emit(strm, d->samples[i], NULL);
