@@ -44,7 +44,7 @@ sym_hash(struct sym_key key)
   khint_t h;
   strm_int len = key.len;
 
-  h = *s++;
+  h = 0;
   while (len--) {
     h = (h << 5) - h + (khint_t)*s++;
   }
