@@ -226,6 +226,7 @@ node_plambda_new(node* pat, node* cond)
   lambda->pat = pat;
   lambda->cond = cond;
   lambda->body = NULL;
+  lambda->next = NULL;
   return (node*)lambda;
 }
 
