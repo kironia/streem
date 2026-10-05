@@ -47,7 +47,7 @@ int strm_event_loop_started = FALSE;
 
 #include <assert.h>
 
-static void task_init();
+static void task_queues_init();
 
 struct strm_task*
 strm_task_new(strm_callback func, strm_value data)
@@ -137,6 +137,7 @@ strm_stream_connect(strm_stream* src, strm_stream* dst)
 {
   assert(src->mode != strm_consumer);
   assert(dst->mode != strm_producer);
+  task_queues_init();
   if (src->dst == NULL) {
     src->dst = dst;
   }
@@ -150,7 +151,6 @@ strm_stream_connect(strm_stream* src, strm_stream* dst)
   strm_atomic_inc(dst->refcnt);
 
   if (src->mode == strm_producer) {
-    task_init();
     strm_task_push(src, src->start_func, strm_nil_value());
   }
   return STRM_OK;
@@ -235,7 +235,16 @@ task_loop(void *data)
 }
 
 static void
-task_init()
+task_queues_init()
+{
+  if (queue) return;
+
+  queue = strm_queue_new();
+  prod_queue = strm_queue_new();
+}
+
+static void
+task_workers_start()
 {
   int i;
 
@@ -243,9 +252,6 @@ task_init()
 
   strm_event_loop_started = TRUE;
   strm_init_io_loop();
-
-  queue = strm_queue_new();
-  prod_queue = strm_queue_new();
   worker_max = worker_count();
   workers = malloc(sizeof(struct strm_worker)*worker_max);
   for (i=0; i<worker_max; i++) {
@@ -257,7 +263,8 @@ int
 strm_loop()
 {
   if (stream_count == 0) return STRM_OK;
-  task_init();
+  task_queues_init();
+  task_workers_start();
   pthread_mutex_lock(&done_mtx);
   while (stream_count != 0) {
     pthread_cond_wait(&done_cond, &done_mtx);
