@@ -617,11 +617,11 @@ pattern         : pary
 
 cparam         : op_lambda
                     {
-                      $$ = node_plambda_new(node_pattern_new(), NULL);
+                      $$ = node_plambda_new(node_pattern_new(NODE_PARRAY), NULL);
                     }
                 | keyword_if expr op_lambda
                     {
-                      $$ = node_plambda_new(node_pattern_new(), $2);
+                      $$ = node_plambda_new(node_pattern_new(NODE_PARRAY), $2);
                     }
                 | pattern op_lambda
                     {

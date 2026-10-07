@@ -577,7 +577,7 @@ node_emit_new(node* value)
 }
 
 node*
-node_skip_new(node* value)
+node_skip_new(void)
 {
   static node nd = { NODE_SKIP };
   return &nd;
